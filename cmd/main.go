@@ -20,14 +20,14 @@ func main() {
 
 	log.Println("Microservice starting...")
 
-	emailSender := &infra.LogEmailSender{}
-	orderProcessor := application.NewOrderProcessor(emailSender)
+	emailSender := infra.NewLoggerEmailSender()
+	uc := application.NewProcessOrderUseCase(emailSender)
 
 	kafkaConsumer := infra.NewKafkaConsumer(
 		cfg.Brokers,
 		cfg.Topic,
 		cfg.GroupID,
-		orderProcessor,
+		uc,
 	)
 
 	log.Println("Kafka consumer created. About to consume messages.")

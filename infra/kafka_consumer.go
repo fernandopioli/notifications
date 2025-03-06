@@ -6,19 +6,18 @@ import (
 	"errors"
 	"log"
 	"notifications/application"
-	"notifications/domain"
 
 	"github.com/segmentio/kafka-go"
 )
 
 type KafkaConsumer struct {
-	Reader         *kafka.Reader
-	OrderProcessor *application.OrderProcessor
+	Reader  *kafka.Reader
+	useCase *application.ProcessOrderUseCase
 }
 
 var _ application.Consumer = (*KafkaConsumer)(nil)
 
-func NewKafkaConsumer(brokers []string, topic string, groupID string, processor *application.OrderProcessor) *KafkaConsumer {
+func NewKafkaConsumer(brokers []string, topic string, groupID string, uc *application.ProcessOrderUseCase) *KafkaConsumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
 		Topic:    topic,
@@ -28,8 +27,8 @@ func NewKafkaConsumer(brokers []string, topic string, groupID string, processor 
 	})
 
 	return &KafkaConsumer{
-		Reader:         reader,
-		OrderProcessor: processor,
+		Reader:  reader,
+		useCase: uc,
 	}
 }
 func (c *KafkaConsumer) Consume(ctx context.Context) error {
@@ -55,18 +54,26 @@ func (c *KafkaConsumer) Consume(ctx context.Context) error {
 
 			log.Printf("Received message: %s", string(msg.Value))
 
-			var order domain.Order
-			if err = json.Unmarshal(msg.Value, &order); err != nil {
-				log.Printf("Error unmarshalling message: %v", err)
+			var orderData struct {
+				Id       string  `json:"id"`
+				Total    float64 `json:"total"`
+				Customer struct {
+					Id    string `json:"id"`
+					Name  string `json:"name"`
+					Email string `json:"email"`
+				} `json:"customer"`
+			}
+			if err := json.Unmarshal(msg.Value, &orderData); err != nil {
+				log.Printf("Error unmarshaling Kafka message: %v", err)
 				continue
 			}
 
-			if err = c.OrderProcessor.ProcessOrder(order); err != nil {
+			if err = c.useCase.Execute(orderData.Id, orderData.Total, orderData.Customer.Id, orderData.Customer.Name, orderData.Customer.Email); err != nil {
 				log.Printf("Error processing order: %v", err)
 				continue
 			}
 
-			log.Printf("Order processed successfully. Order ID: %s", order.ID)
+			log.Printf("Order processed successfully. Order ID: %s", orderData.Id)
 		}
 	}
 }
